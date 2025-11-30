@@ -1,55 +1,144 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, Alert, ScrollView } from 'react-native';
+import React, { useEffect } from 'react';
+import { View, Text, TouchableOpacity, Alert, ScrollView, Platform } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { useSelector, useDispatch } from 'react-redux';
+import { 
+  setSelectedColor, 
+  setNotes, 
+  setSelectedDate, 
+  setShowDatePicker,
+  signInUser,
+  saveMood 
+} from './store';
 
 const MoodSelectionScreen = () => {
-  const [selectedColor, setSelectedColor] = useState('#FFB6C1'); // Light pink default
-  const [notes, setNotes] = useState('');
-  const [showNotes, setShowNotes] = useState(false);
+  const dispatch = useDispatch();
+  
+  // Get state from Redux store
+  const {
+    selectedColor,
+    notes,
+    showNotes,
+    selectedDate,
+    showDatePicker,
+    isLoading,
+    error
+  } = useSelector((state) => state.mood);
 
-  // Pastel color palette for quick selection
+  useEffect(() => {
+    // Sign in user when component mounts
+    dispatch(signInUser());
+  }, [dispatch]);
+
   const colorOptions = [
-    '#FFB6C1', // Light Pink - Happy/Love
-    '#DDA0DD', // Plum - Dreamy
-    '#98FB98', // Pale Green - Calm/Peaceful
-    '#87CEEB', // Sky Blue - Content
-    '#F0E68C', // Khaki - Energetic
-    '#FFA07A', // Light Salmon - Excited
-    '#D3D3D3', // Light Gray - Neutral
-    '#DEB887', // Burlywood - Cozy
-    '#B0E0E6', // Powder Blue - Serene
-    '#F5DEB3', // Wheat - Warm
-    '#E6E6FA', // Lavender - Relaxed
-    '#FFEFD5', // Papaya Whip - Cheerful
+    '#FFB6C1',
+    '#DDA0DD',
+    '#98FB98',
+    '#87CEEB',
+    '#F0E68C',
+    '#FFA07A',
+    '#D3D3D3',
+    '#DEB887',
+    '#B0E0E6',
+    '#F5DEB3',
+    '#E6E6FA',
+    '#FFEFD5',
   ];
 
   const handleColorSelect = (color) => {
-    setSelectedColor(color);
-    setShowNotes(true);
+    dispatch(setSelectedColor(color));
   };
 
-  const saveMoodEntry = () => {
-    // For now, just show an alert - we'll integrate Firebase later
-    Alert.alert(
-      'Mood Saved!', 
-      `Color: ${selectedColor}\nNotes: ${notes || 'No notes'}`,
-      [{ text: 'OK' }]
-    );
+  const handleDateChange = (event, date) => {
+    if (Platform.OS === 'android') {
+      dispatch(setShowDatePicker(false));
+    }
+    if (date) {
+      dispatch(setSelectedDate(date));
+    }
+  };
+
+  const formatDate = (date) => {
+    const options = { 
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    };
+    return new Date(date).toLocaleDateString('en-US', options);
+  };
+
+  const isToday = (date) => {
+    const today = new Date();
+    return new Date(date).toDateString() === today.toDateString();
+  };
+
+  const saveMoodEntry = async () => {
+    if (isLoading) return;
+    
+    try {
+      // Dispatch the saveMood thunk
+      await dispatch(saveMood({ selectedColor, notes, selectedDate })).unwrap();
+      
+      Alert.alert(
+        'Mood Saved! 🎨', 
+        `Your mood for ${formatDate(selectedDate)} has been saved successfully.`,
+        [{ text: 'OK' }]
+      );
+    } catch (error) {
+      console.error('Error saving mood entry:', error);
+      Alert.alert(
+        'Save Failed',
+        'There was an error saving your mood entry. Please try again.',
+        [{ text: 'OK' }]
+      );
+    }
   };
 
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>How are you feeling today?</Text>
+        <Text style={styles.title}>
+          {isToday(selectedDate) ? 'How are you feeling today?' : 'How were you feeling?'}
+        </Text>
         <Text style={styles.subtitle}>Choose a color that represents your mood</Text>
       </View>
 
-      {/* Selected Color Display */}
+      <View style={styles.dateSection}>
+        <Text style={styles.dateLabel}>Select Date</Text>
+        <TouchableOpacity 
+          style={styles.dateSelector}
+          onPress={() => dispatch(setShowDatePicker(true))}
+        >
+          <Text style={styles.dateText}>{formatDate(selectedDate)}</Text>
+          <Text style={styles.dateIcon}>📅</Text>
+        </TouchableOpacity>
+        
+        {showDatePicker && (
+          <DateTimePicker
+            value={new Date(selectedDate)}
+            mode="date"
+            display={Platform.OS === 'ios' ? 'compact' : 'default'}
+            onChange={handleDateChange}
+            maximumDate={new Date()}
+          />
+        )}
+        
+        {Platform.OS === 'ios' && showDatePicker && (
+          <TouchableOpacity 
+            style={styles.datePickerDone}
+            onPress={() => dispatch(setShowDatePicker(false))}
+          >
+            <Text style={styles.datePickerDoneText}>Done</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
       <View style={styles.selectedColorContainer}>
         <View style={[styles.selectedColorCircle, { backgroundColor: selectedColor }]} />
         <Text style={styles.selectedColorText}>Current Selection</Text>
       </View>
 
-      {/* Color Grid */}
       <View style={styles.colorGrid}>
         {colorOptions.map((color, index) => (
           <TouchableOpacity
@@ -64,7 +153,6 @@ const MoodSelectionScreen = () => {
         ))}
       </View>
 
-      {/* Notes Section */}
       {showNotes && (
         <View style={styles.notesSection}>
           <Text style={styles.notesLabel}>Add a note (optional)</Text>
@@ -74,7 +162,7 @@ const MoodSelectionScreen = () => {
               Alert.prompt(
                 'Add Note',
                 'How are you feeling?',
-                (text) => setNotes(text),
+                (text) => dispatch(setNotes(text)),
                 'plain-text',
                 notes
               );
@@ -87,10 +175,15 @@ const MoodSelectionScreen = () => {
         </View>
       )}
 
-      {/* Save Button */}
       {showNotes && (
-        <TouchableOpacity style={styles.saveButton} onPress={saveMoodEntry}>
-          <Text style={styles.saveButtonText}>Save Today's Mood</Text>
+        <TouchableOpacity 
+          style={[styles.saveButton, isLoading && styles.saveButtonDisabled]} 
+          onPress={saveMoodEntry}
+          disabled={isLoading}
+        >
+          <Text style={styles.saveButtonText}>
+            {isLoading ? 'Saving...' : (isToday(selectedDate) ? 'Save Today\'s Mood' : 'Save Mood Entry')}
+          </Text>
         </TouchableOpacity>
       )}
     </ScrollView>
@@ -106,7 +199,53 @@ const styles = {
   header: {
     alignItems: 'center',
     marginTop: 60,
-    marginBottom: 40,
+    marginBottom: 30,
+  },
+  dateSection: {
+    marginBottom: 30,
+    alignItems: 'center',
+  },
+  dateLabel: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#333',
+    marginBottom: 10,
+  },
+  dateSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8F8F8',
+    borderRadius: 12,
+    padding: 15,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    minWidth: 250,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  dateText: {
+    fontSize: 16,
+    color: '#333',
+    fontWeight: '500',
+  },
+  dateIcon: {
+    fontSize: 18,
+  },
+  datePickerDone: {
+    backgroundColor: '#FFB6C1',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+    marginTop: 10,
+  },
+  datePickerDoneText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
   },
   title: {
     fontSize: 24,
@@ -192,6 +331,10 @@ const styles = {
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+  },
+  saveButtonDisabled: {
+    backgroundColor: '#D3D3D3',
+    shadowOpacity: 0.05,
   },
   saveButtonText: {
     fontSize: 18,

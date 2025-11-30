@@ -10,11 +10,16 @@
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^1.24.0",
+    "@react-native-community/datetimepicker": "8.4.4",
+    "@reduxjs/toolkit": "^2.11.0",
     "expo": "~54.0.25",
     "expo-status-bar": "~3.0.8",
     "firebase": "^12.6.0",
     "react": "19.1.0",
-    "react-native": "0.81.5"
+    "react-dom": "19.1.0",
+    "react-native": "0.81.5",
+    "react-native-web": "^0.21.0",
+    "react-redux": "^9.2.0"
   },
   "private": true
 }
