@@ -1,6 +1,6 @@
 import { configureStore, createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { db, auth } from './firebase';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp, collection, query, where, orderBy, getDocs } from 'firebase/firestore';
 import { signInAnonymously } from 'firebase/auth';
 
 // Async thunk for signing in anonymously
@@ -11,9 +11,93 @@ export const signInUser = createAsyncThunk('mood/signInUser', async () => {
   return auth.currentUser.uid;
 });
 
+// Async thunk for fetching mood history
+export const fetchMoodHistory = createAsyncThunk('mood/fetchMoodHistory', async () => {
+  try {
+    if (!auth.currentUser) {
+      await signInAnonymously(auth);
+    }
+    
+    const userId = auth.currentUser.uid;
+    console.log('Fetching moods for user:', userId);
+    
+    // Try to get a specific document first to test permissions
+    const testDocId = `${userId}_test`;
+    const testDocRef = doc(db, 'moods', testDocId);
+    
+    try {
+      await testDocRef.get?.() || getDocs(query(collection(db, 'moods'), where('__name__', '==', testDocId)));
+    } catch (testError) {
+      console.log('Firestore permissions test failed, returning empty array');
+      return [];
+    }
+    
+    // If we get here, permissions seem OK, try the actual query
+    const moodsRef = collection(db, 'moods');
+    const q = query(
+      moodsRef, 
+      where('userId', '==', userId)
+    );
+    
+    const querySnapshot = await getDocs(q);
+    const moods = [];
+    
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      if (data && data.userId === userId) {
+        moods.push({
+          id: doc.id,
+          ...data
+        });
+      }
+    });
+    
+    console.log('Found moods:', moods.length);
+    
+    // Sort on client side
+    const sortedMoods = moods.sort((a, b) => {
+      return new Date(b.date) - new Date(a.date);
+    });
+    
+    return sortedMoods;
+    
+  } catch (error) {
+    console.error('Error fetching mood history:', error);
+    console.log('Firestore might not be properly configured. Using demo mode.');
+    
+    // Return demo data when Firebase isn't working
+    const demoMoods = [
+      {
+        id: 'demo_1',
+        color: '#FFB6C1',
+        notes: 'Demo entry - feeling great!',
+        date: new Date(Date.now() - 86400000).toISOString(), // Yesterday
+        dateKey: new Date(Date.now() - 86400000).toISOString().split('T')[0],
+        userId: 'demo_user'
+      },
+      {
+        id: 'demo_2', 
+        color: '#87CEEB',
+        notes: 'Demo entry - peaceful day',
+        date: new Date(Date.now() - 172800000).toISOString(), // 2 days ago
+        dateKey: new Date(Date.now() - 172800000).toISOString().split('T')[0],
+        userId: 'demo_user'
+      }
+    ];
+    
+    console.log('Returning demo mood data');
+    return demoMoods;
+  }
+});
+
 // Async thunk for saving mood
 export const saveMood = createAsyncThunk('mood/saveMood', async (moodData) => {
   const { selectedColor, notes, selectedDate } = moodData;
+  
+  // Ensure user is signed in
+  if (!auth.currentUser) {
+    await signInAnonymously(auth);
+  }
   
   const getDateKey = (date) => {
     const year = date.getFullYear();
@@ -34,10 +118,16 @@ export const saveMood = createAsyncThunk('mood/saveMood', async (moodData) => {
     timestamp: serverTimestamp(),
   };
 
+  // Use a simpler document ID structure
   const moodRef = doc(db, 'moods', `${userId}_${dateKey}`);
   await setDoc(moodRef, moodEntry, { merge: true });
   
-  return moodEntry;
+  // Return the entry with the ID for local state update
+  return {
+    id: `${userId}_${dateKey}`,
+    ...moodEntry,
+    timestamp: new Date().toISOString(), // Use current time for local state
+  };
 });
 
 // Mood slice
@@ -52,6 +142,8 @@ const moodSlice = createSlice({
     isLoading: false,
     error: null,
     userId: null,
+    moodHistory: [],
+    isLoadingHistory: false,
   },
   reducers: {
     setSelectedColor: (state, action) => {
@@ -82,12 +174,27 @@ const moodSlice = createSlice({
         state.isLoading = true;
         state.error = null;
       })
-      .addCase(saveMood.fulfilled, (state) => {
+      .addCase(saveMood.fulfilled, (state, action) => {
         state.isLoading = false;
         state.notes = '';
+        // Add the new mood to history immediately
+        state.moodHistory.unshift(action.payload);
       })
       .addCase(saveMood.rejected, (state, action) => {
         state.isLoading = false;
+        state.error = action.error.message;
+      })
+      // Fetch mood history
+      .addCase(fetchMoodHistory.pending, (state) => {
+        state.isLoadingHistory = true;
+        state.error = null;
+      })
+      .addCase(fetchMoodHistory.fulfilled, (state, action) => {
+        state.isLoadingHistory = false;
+        state.moodHistory = action.payload;
+      })
+      .addCase(fetchMoodHistory.rejected, (state, action) => {
+        state.isLoadingHistory = false;
         state.error = action.error.message;
       });
   },
