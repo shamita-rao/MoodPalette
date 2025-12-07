@@ -1,11 +1,14 @@
-import React, { useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Share } from 'react-native';
 import { useSelector, useDispatch } from 'react-redux';
-import { fetchMoodHistory } from './store';
+import { fetchMoodHistory, deleteMood } from './store';
 
 const HistoryScreen = () => {
   const dispatch = useDispatch();
-  const { moodHistory, isLoadingHistory, error } = useSelector((state) => state.mood);
+  const { moodHistory, isLoadingHistory, error, user } = useSelector((state) => state.mood);
+  
+  // Filter
+  const [selectedFilter, setSelectedFilter] = useState('monthly');
 
   useEffect(() => {
     dispatch(fetchMoodHistory());
@@ -14,11 +17,105 @@ const HistoryScreen = () => {
   const formatDate = (dateString) => {
     const date = new Date(dateString);
     const options = { 
-      weekday: 'short', 
       month: 'short', 
-      day: 'numeric' 
+      day: 'numeric',
+      year: 'numeric'
     };
     return date.toLocaleDateString('en-US', options);
+  };
+
+  const getFilteredMoods = () => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+    
+    // Calculate start of current week (Sunday)
+    const currentWeekStart = new Date(now);
+    currentWeekStart.setDate(now.getDate() - now.getDay());
+
+    return moodHistory.filter(mood => {
+      const moodDate = new Date(mood.date);
+      
+      switch (selectedFilter) {
+        case 'weekly':
+          const sevenDaysAgo = new Date(now);
+          sevenDaysAgo.setDate(now.getDate() - 7);
+          return moodDate >= sevenDaysAgo;
+        
+        case 'monthly':
+          const thirtyDaysAgo = new Date(now);
+          thirtyDaysAgo.setDate(now.getDate() - 30);
+          return moodDate >= thirtyDaysAgo;
+          
+        case 'yearly':
+          return moodDate.getFullYear() === currentYear;
+        
+        case 'all':
+        default:
+          return true;
+      }
+    });
+  };
+
+  const getFilterLabel = () => {
+    switch (selectedFilter) {
+      case 'weekly': return 'Past 7 Days';
+      case 'monthly': return 'Past 30 Days';
+      case 'yearly': return 'This Year';
+      case 'all': return 'All Time';
+      default: return 'All Time';
+    }
+  };
+
+  const exportMoodHistory = async () => {
+    try {
+      const filteredMoods = getFilteredMoods();
+      
+      if (filteredMoods.length === 0) {
+        Alert.alert('No Data', 'No moods to export for the selected period.');
+        return;
+      }
+
+      // Color to emoji mapping
+      const colorEmojis = {
+        // Positive emotions
+        '#FFD700': '💛', // Gold - Joyful & Radiant (yellow heart)
+        '#FF69B4': '🩷', // Pink - Excited & Energetic (pink heart)
+        '#32CD32': '💚', // Lime Green - Happy & Alive (green heart)
+        '#FF6347': '❤️', // Tomato - Passionate & Enthusiastic (red heart)
+        '#FFA500': '🧡', // Orange - Optimistic & Cheerful (orange heart)
+        
+        // Negative emotions
+        '#708090': '🩶', // Slate Gray - Sad & Melancholy (grey heart)
+        '#4682B4': '💙', // Steel Blue - Anxious & Worried (blue heart)
+        '#8B4513': '🤎', // Saddle Brown - Frustrated & Stuck (brown heart)
+        '#483D8B': '💜', // Dark Slate Blue - Lonely & Isolated (purple heart)
+        '#2F4F4F': '🖤', // Dark Slate Gray - Depressed & Heavy (black heart)
+      };
+
+      // Mood colors in chronological order
+      const moodColors = filteredMoods
+        .sort((a, b) => new Date(a.date) - new Date(b.date))
+        .map(mood => colorEmojis[mood.color] || '⬜');
+
+      // Grid (8 emojis per row)
+      const rows = [];
+      for (let i = 0; i < moodColors.length; i += 8) {
+        rows.push(moodColors.slice(i, i + 8).join(''));
+      }
+
+      const colorGrid = rows.join('\n');
+      
+      const shareOptions = {
+        message: `🎨 My Mood Palette (${getFilterLabel()}):\n\n${colorGrid}\n\nEach emoji represents a day's mood!`,
+        title: `Mood Palette - ${getFilterLabel()}`,
+      };
+
+      await Share.share(shareOptions);
+    } catch (error) {
+      console.error('Error sharing mood history:', error);
+      Alert.alert('Export Failed', 'There was an error exporting your mood history.');
+    }
   };
 
   const groupMoodsByMonth = (moods) => {
@@ -40,6 +137,37 @@ const HistoryScreen = () => {
     return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   };
 
+  const handleDeleteMood = (mood) => {
+    Alert.alert(
+      'Delete Mood Entry',
+      `Are you sure you want to delete your mood entry from ${formatDate(mood.date)}?`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await dispatch(deleteMood(mood.id)).unwrap();
+              Alert.alert('Deleted', 'Mood entry deleted successfully.');
+            } catch (error) {
+              console.error('Error deleting mood:', error);
+              Alert.alert(
+                'Delete Failed',
+                'There was an error deleting your mood entry. Please try again.',
+                [{ text: 'OK' }]
+              );
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Main component return
   if (isLoadingHistory) {
     return (
       <View style={styles.centerContainer}>
@@ -75,32 +203,130 @@ const HistoryScreen = () => {
     );
   }
 
-  const groupedMoods = groupMoodsByMonth(moodHistory);
+  const filteredMoods = getFilteredMoods();
+  const groupedMoods = groupMoodsByMonth(filteredMoods);
+
+  // Empty state for filtered results
+  if (filteredMoods.length === 0 && moodHistory.length > 0) {
+    return (
+      <ScrollView style={styles.container}>
+        <View style={styles.header}>
+          <View style={styles.userInfo}>
+            <Text style={styles.userEmail}>{user?.email}</Text>
+          </View>
+          <Text style={styles.title}>Your Mood History</Text>
+          <Text style={styles.subtitle}>
+            {filteredMoods.length} of {moodHistory.length} entries
+          </Text>
+        </View>
+
+        <View style={styles.filterContainer}>
+          {[
+            { key: 'weekly', label: '7 Days' },
+            { key: 'monthly', label: '30 Days' },
+            { key: 'yearly', label: 'This Year' },
+            { key: 'all', label: 'All' }
+          ].map((filter) => (
+            <TouchableOpacity
+              key={filter.key}
+              style={[
+                styles.filterButton,
+                selectedFilter === filter.key && styles.activeFilterButton
+              ]}
+              onPress={() => setSelectedFilter(filter.key)}
+            >
+              <Text style={[
+                styles.filterButtonText,
+                selectedFilter === filter.key && styles.activeFilterButtonText
+              ]}>
+                {filter.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <View style={styles.centerContainer}>
+          <Text style={styles.emptyTitle}>No moods for this {selectedFilter === 'all' ? 'period' : selectedFilter.slice(0, -2)} 📅</Text>
+          <Text style={styles.emptySubtitle}>Try selecting a different time period</Text>
+        </View>
+      </ScrollView>
+    );
+  }
 
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
+        <View style={styles.userInfo}>
+          <Text style={styles.userEmail}>{user?.email}</Text>
+        </View>
         <Text style={styles.title}>Your Mood History</Text>
-        <Text style={styles.subtitle}>{moodHistory.length} entries</Text>
+        <Text style={styles.subtitle}>
+          {filteredMoods.length} of {moodHistory.length} entries
+        </Text>
       </View>
 
-      {Object.entries(groupedMoods).map(([monthYear, moods]) => (
+      {/* Filter buttons */}
+      <View style={styles.filterContainer}>
+        {[
+          { key: 'weekly', label: '7 Days' },
+          { key: 'monthly', label: '30 Days' },
+          { key: 'yearly', label: 'This Year' },
+          { key: 'all', label: 'All' }
+        ].map((filter) => (
+          <TouchableOpacity
+            key={filter.key}
+            style={[
+              styles.filterButton,
+              selectedFilter === filter.key && styles.activeFilterButton
+            ]}
+            onPress={() => setSelectedFilter(filter.key)}
+          >
+            <Text style={[
+              styles.filterButtonText,
+              selectedFilter === filter.key && styles.activeFilterButtonText
+            ]}>
+              {filter.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Export button */}
+      {filteredMoods.length > 0 && (
+        <View style={styles.exportContainer}>
+          <TouchableOpacity 
+            style={styles.exportButton}
+            onPress={exportMoodHistory}
+          >
+            <Text style={styles.exportButtonText}>📤 Export {getFilterLabel()}</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Mood entries grouped by month */}
+      {Object.entries(groupedMoods)
+        .sort(([a], [b]) => b.localeCompare(a))
+        .map(([monthYear, moods]) => (
         <View key={monthYear} style={styles.monthSection}>
-          <Text style={styles.monthTitle}>{getMonthName(monthYear)}</Text>
-          
+          <Text style={styles.monthHeader}>{getMonthName(monthYear)}</Text>
           <View style={styles.moodGrid}>
-            {moods.map((mood) => (
-              <View key={mood.id} style={styles.moodItem}>
-                <View 
-                  style={[styles.colorCircle, { backgroundColor: mood.color }]} 
-                />
-                <Text style={styles.dateText}>{formatDate(mood.date)}</Text>
-                {mood.notes && (
-                  <Text style={styles.notesText} numberOfLines={2}>
-                    {mood.notes}
-                  </Text>
-                )}
-              </View>
+            {moods
+              .sort((a, b) => new Date(b.date) - new Date(a.date))
+              .map((mood) => (
+              <TouchableOpacity 
+                key={mood.id}
+                style={[styles.moodSquare, { backgroundColor: mood.color }]}
+                onLongPress={() => handleDeleteMood(mood)}
+              >
+                <View style={styles.moodContent}>
+                  <Text style={styles.dateInSquare}>{formatDate(mood.date)}</Text>
+                  {mood.notes && (
+                    <Text style={styles.notesInSquare} numberOfLines={2}>
+                      {mood.notes}
+                    </Text>
+                  )}
+                </View>
+              </TouchableOpacity>
             ))}
           </View>
         </View>
@@ -120,118 +346,179 @@ const styles = {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    paddingHorizontal: 30,
   },
   header: {
-    alignItems: 'center',
-    marginTop: 60,
-    marginBottom: 30,
     paddingHorizontal: 20,
+    paddingVertical: 20,
+    backgroundColor: '#F8F9FA',
+  },
+  userInfo: {
+    alignItems: 'flex-end',
+    marginBottom: 10,
+  },
+  userEmail: {
+    fontSize: 12,
+    color: '#6C757D',
+    fontStyle: 'italic',
   },
   title: {
-    fontSize: 24,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 5,
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#2C3E50',
+    marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: '#666',
+    color: '#6C757D',
+    fontWeight: '500',
   },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: '#666',
-  },
-  errorText: {
-    fontSize: 18,
-    color: '#FF6B6B',
-    marginBottom: 10,
-    textAlign: 'center',
-    fontWeight: '600',
-  },
-  errorSubtext: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 20,
-    textAlign: 'center',
+  filterContainer: {
+    flexDirection: 'row',
     paddingHorizontal: 20,
-    lineHeight: 20,
+    paddingVertical: 15,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'space-around',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E9ECEF',
   },
-  retryButton: {
+  filterButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    backgroundColor: '#F8F9FA',
+    borderWidth: 1,
+    borderColor: '#DEE2E6',
+  },
+  activeFilterButton: {
     backgroundColor: '#FFB6C1',
-    borderRadius: 12,
+    borderColor: '#FFB6C1',
+  },
+  filterButtonText: {
+    fontSize: 14,
+    color: '#6C757D',
+    fontWeight: '600',
+  },
+  activeFilterButtonText: {
+    color: '#FFFFFF',
+  },
+  exportContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E9ECEF',
+  },
+  exportButton: {
+    backgroundColor: '#28A745',
     paddingVertical: 12,
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
+    borderRadius: 25,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  retryButtonText: {
+  exportButtonText: {
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 10,
-    textAlign: 'center',
-  },
-  emptySubtitle: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
   },
   monthSection: {
-    marginBottom: 30,
-    paddingHorizontal: 20,
+    marginVertical: 10,
   },
-  monthTitle: {
-    fontSize: 18,
+  monthHeader: {
+    fontSize: 20,
     fontWeight: '600',
-    color: '#333',
-    marginBottom: 15,
+    color: '#495057',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: '#F8F9FA',
   },
   moodGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    paddingHorizontal: 10,
   },
-  moodItem: {
-    backgroundColor: '#F8F8F8',
+  moodSquare: {
+    width: '31%',
+    aspectRatio: 1,
+    margin: '1%',
     borderRadius: 12,
-    padding: 12,
-    alignItems: 'center',
-    minWidth: 100,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
+    padding: 8,
+    justifyContent: 'space-between',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  colorCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    marginBottom: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 1,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  dateText: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#333',
-    marginBottom: 4,
+  moodContent: {
+    flex: 1,
+    justifyContent: 'space-between',
   },
-  notesText: {
-    fontSize: 10,
-    color: '#666',
+  dateInSquare: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#FFFFFF',
     textAlign: 'center',
-    lineHeight: 14,
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
+  },
+  notesInSquare: {
+    fontSize: 9,
+    color: '#FFFFFF',
+    textAlign: 'center',
+    fontWeight: '500',
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
+    paddingHorizontal: 4,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#6C757D',
+    marginTop: 15,
+  },
+  errorText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#DC3545',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  errorSubtext: {
+    fontSize: 14,
+    color: '#6C757D',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  retryButton: {
+    backgroundColor: '#007BFF',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 20,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#6C757D',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  emptySubtitle: {
+    fontSize: 16,
+    color: '#ADB5BD',
+    textAlign: 'center',
   },
   bottomPadding: {
     height: 20,

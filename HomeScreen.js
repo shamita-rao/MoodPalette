@@ -7,8 +7,8 @@ import {
   setNotes, 
   setSelectedDate, 
   setShowDatePicker,
-  signInUser,
-  saveMood 
+  saveMood,
+  getColorName
 } from './store';
 
 const HomeScreen = () => {
@@ -24,23 +24,20 @@ const HomeScreen = () => {
     error
   } = useSelector((state) => state.mood);
 
-  useEffect(() => {
-    dispatch(signInUser());
-  }, [dispatch]);
-
   const colorOptions = [
-    '#FFB6C1',
-    '#DDA0DD',
-    '#98FB98',
-    '#87CEEB',
-    '#F0E68C',
-    '#FFA07A',
-    '#D3D3D3',
-    '#DEB887',
-    '#B0E0E6',
-    '#F5DEB3',
-    '#E6E6FA',
-    '#FFEFD5',
+    // Positive emotions
+    '#FFD700',  // Gold - Joyful & Radiant
+    '#FF69B4',  // Hot Pink - Excited & Energetic
+    '#32CD32',  // Lime Green - Happy & Alive
+    '#FF6347',  // Tomato - Passionate & Enthusiastic
+    '#FFA500',  // Orange - Optimistic & Cheerful
+    
+    // Negative emotions
+    '#708090',  // Slate Gray - Sad & Melancholy
+    '#4682B4',  // Steel Blue - Anxious & Worried
+    '#8B4513',  // Saddle Brown - Frustrated & Stuck
+    '#483D8B',  // Dark Slate Blue - Lonely & Isolated
+    '#2F4F4F',  // Dark Slate Gray - Depressed & Heavy
   ];
 
   const handleColorSelect = (color) => {
@@ -134,6 +131,7 @@ const HomeScreen = () => {
       <View style={styles.selectedColorContainer}>
         <View style={[styles.selectedColorCircle, { backgroundColor: selectedColor }]} />
         <Text style={styles.selectedColorText}>Current Selection</Text>
+        <Text style={styles.colorNameText}>{getColorName(selectedColor)}</Text>
       </View>
 
       <View style={styles.colorGrid}>
@@ -274,6 +272,13 @@ const styles = {
   selectedColorText: {
     fontSize: 14,
     color: '#666',
+  },
+  colorNameText: {
+    fontSize: 12,
+    color: '#888',
+    textAlign: 'center',
+    marginTop: 4,
+    fontStyle: 'italic',
   },
   colorGrid: {
     flexDirection: 'row',
