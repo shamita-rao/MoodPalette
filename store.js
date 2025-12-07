@@ -11,19 +11,19 @@ import {
 
 // Color name mapping for mood colors
 const COLOR_NAMES = {
-  // Positive emotions - bright and warm tones
-  '#FFD700': 'Gold - Joyful & Radiant',
-  '#FF69B4': 'Hot Pink - Excited & Energetic',
-  '#32CD32': 'Lime Green - Happy & Alive', 
-  '#FF6347': 'Tomato - Passionate & Enthusiastic',
-  '#FFA500': 'Orange - Optimistic & Cheerful',
+  // Positive emotions
+  '#FFD700': 'Gold - Happy',
+  '#FF69B4': 'Pink - Excited',
+  '#32CD32': 'Lime Green - Curious', 
+  '#FF6347': 'Tomato - Energetic',
+  '#FFA500': 'Orange - Optimistic',
   
-  // Negative emotions - cool and dull tones
-  '#708090': 'Slate Gray - Sad & Melancholy',
-  '#4682B4': 'Steel Blue - Anxious & Worried',
-  '#8B4513': 'Saddle Brown - Frustrated & Stuck',
-  '#483D8B': 'Dark Slate Blue - Lonely & Isolated',
-  '#2F4F4F': 'Dark Slate Gray - Depressed & Heavy'
+  // Negative emotions
+  '#708090': 'Slate Gray - Sad',
+  '#4682B4': 'Steel Blue - Anxious',
+  '#8B4513': 'Saddle Brown - Frustrated',
+  '#483D8B': 'Dark Slate Blue - Lonely',
+  '#2F4F4F': 'Dark Slate Gray - Depressed'
 };
 
 // Export utility function to get color name
@@ -90,7 +90,7 @@ export const initializeAuth = createAsyncThunk('auth/initializeAuth', async () =
   });
 });
 
-// Async thunk for fetching mood history
+// Fetching mood history
 export const fetchMoodHistory = createAsyncThunk('mood/fetchMoodHistory', async () => {
   try {
     if (!auth.currentUser) {
@@ -101,7 +101,7 @@ export const fetchMoodHistory = createAsyncThunk('mood/fetchMoodHistory', async 
     const userId = auth.currentUser.uid;
     console.log('Fetching moods for authenticated user:', userId);
     
-    // Skip permission test for now - try direct query
+    // Skip permission test
     console.log('Attempting direct Firestore query for user:', userId);
     
     // Try a more specific query approach
@@ -123,7 +123,7 @@ export const fetchMoodHistory = createAsyncThunk('mood/fetchMoodHistory', async 
           ...data
         };
         
-        // Handle timestamp conversion for Redux serialization
+        // Timestamp conversion for Redux 
         if (data.timestamp && typeof data.timestamp.toDate === 'function') {
           mood.timestamp = data.timestamp.toDate().toISOString();
         }
@@ -133,7 +133,7 @@ export const fetchMoodHistory = createAsyncThunk('mood/fetchMoodHistory', async 
           mood.date = mood.date.toISOString ? mood.date.toISOString() : String(mood.date);
         }
         
-        // Add color name if it doesn't exist (for backward compatibility)
+        // Add color name if it doesn't exist
         if (mood.color && !mood.colorName) {
           mood.colorName = COLOR_NAMES[mood.color] || 'Unknown Color';
         }
@@ -144,7 +144,7 @@ export const fetchMoodHistory = createAsyncThunk('mood/fetchMoodHistory', async 
     
     console.log('Found moods:', moods.length);
     
-    // Sort on client side by date (newest first)
+    // Sort on user view by date (newest first)
     const sortedMoods = moods.sort((a, b) => {
       const dateA = new Date(a.date || a.timestamp);
       const dateB = new Date(b.date || b.timestamp);
@@ -158,7 +158,7 @@ export const fetchMoodHistory = createAsyncThunk('mood/fetchMoodHistory', async 
     console.log('🔒 This is a Firestore permissions issue - your rules are blocking reads.');
     console.log('💡 App will work locally but won\'t sync with Firebase until rules are fixed.');
     
-    // Return empty array to show that local mood saving still works
+    // Return an empty array to show that local mood saving still works
     console.log('📱 Returning empty array - local mood entries will still work');
     return [];
   }
@@ -189,19 +189,18 @@ export const saveMood = createAsyncThunk('mood/saveMood', async (moodData) => {
   const userEmail = auth.currentUser.email;
   
   const moodEntry = {
-    color: selectedColor, // Hex code like "#D3D3D3"
-    colorName: COLOR_NAMES[selectedColor] || 'Unknown Color', // Human-readable name
-    notes: notes || '', // User's notes (string)
-    date: selectedDate.toISOString(), // ISO date string like "2025-12-07T19:13:36.825Z"
-    dateKey: dateKey, // Date key like "2025-12-07"
-    userId: userId, // User ID string like "0KZQTcAhYKfA6uJ06y3SEeW1qKt2"
-    userEmail: userEmail, // User email like "shamita.rao@gmail.com"
-    timestamp: serverTimestamp(), // Firebase server timestamp
+    colorName: COLOR_NAMES[selectedColor] || 'Unknown Color',
+    notes: notes || '',
+    date: selectedDate.toISOString(),
+    dateKey: dateKey,
+    userId: userId,
+    userEmail: userEmail, 
+    timestamp: serverTimestamp(),
   };
 
-  // Create a readable document ID using email prefix
-  const emailPrefix = userEmail.split('@')[0].replace(/\./g, '_'); // "shamita_rao"
-  const docId = `${emailPrefix}_${dateKey}_${userId.slice(-6)}`; // "shamita_rao_2025-12-07_qKt2"
+  // Readable document ID using email prefix
+  const emailPrefix = userEmail.split('@')[0].replace(/\./g, '_');
+  const docId = `${emailPrefix}_${dateKey}_${userId.slice(-6)}`;
   const moodRef = doc(db, 'moods', docId);
   
   console.log('Attempting to save to Firestore with doc ID:', docId);
@@ -215,7 +214,6 @@ export const saveMood = createAsyncThunk('mood/saveMood', async (moodData) => {
     console.error('❌ Firestore save error:', firestoreError);
     console.error('This is a Firestore security rules issue. Please update your rules.');
     
-    // Don't throw error - just log it and continue with local state
     // This allows the app to work even with restrictive Firestore rules
     console.log('💡 Continuing with local state only. Mood will be saved locally but not synced to Firebase.');
   }
@@ -230,7 +228,7 @@ export const saveMood = createAsyncThunk('mood/saveMood', async (moodData) => {
     dateKey: dateKey,
     userId: userId,
     userEmail: userEmail,
-    timestamp: new Date().toISOString(), // Use current time for local state
+    timestamp: new Date().toISOString(),
   };
 });
 
@@ -249,7 +247,7 @@ export const deleteMood = createAsyncThunk('mood/deleteMood', async (moodId) => 
     await deleteDoc(moodRef);
     console.log('✅ Mood deleted successfully from Firestore');
     
-    return moodId; // Return the ID for local state update
+    return moodId;
   } catch (firestoreError) {
     console.error('❌ Firestore delete error:', firestoreError);
     console.error('This is a Firestore security rules issue or connectivity problem.');
