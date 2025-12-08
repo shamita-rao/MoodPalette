@@ -318,6 +318,13 @@ const HistoryScreen = () => {
                 style={[styles.moodSquare, { backgroundColor: mood.color }]}
                 onLongPress={() => handleDeleteMood(mood)}
               >
+                <TouchableOpacity 
+                  style={styles.deleteButton}
+                  onPress={() => handleDeleteMood(mood)}
+                >
+                  <Text style={styles.deleteButtonText}>✕</Text>
+                </TouchableOpacity>
+                
                 <View style={styles.moodContent}>
                   <Text style={styles.dateInSquare}>{formatDate(mood.date)}</Text>
                   {mood.notes && (
@@ -458,6 +465,24 @@ const styles = {
   moodContent: {
     flex: 1,
     justifyContent: 'space-between',
+  },
+  deleteButton: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1,
+  },
+  deleteButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+    lineHeight: 12,
   },
   dateInSquare: {
     fontSize: 11,

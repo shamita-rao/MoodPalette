@@ -189,6 +189,7 @@ export const saveMood = createAsyncThunk('mood/saveMood', async (moodData) => {
   const userEmail = auth.currentUser.email;
   
   const moodEntry = {
+    color: selectedColor,  // ✅ Save the hex color value
     colorName: COLOR_NAMES[selectedColor] || 'Unknown Color',
     notes: notes || '',
     date: selectedDate.toISOString(),
