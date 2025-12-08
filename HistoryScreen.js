@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Share } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Share, Modal } from 'react-native';
 import { useSelector, useDispatch } from 'react-redux';
-import { fetchMoodHistory, deleteMood } from './store';
+import { fetchMoodHistory, deleteMood, editMood, openEditModal, closeEditModal, setEditColor, setEditNotes } from './store';
 
 const HistoryScreen = () => {
   const dispatch = useDispatch();
-  const { moodHistory, isLoadingHistory, error, user } = useSelector((state) => state.mood);
+  const { moodHistory, isLoadingHistory, error, user, showEditModal, editingMood, editColor, editNotes, isEditingLoading } = useSelector((state) => state.mood);
   
   // Filter
   const [selectedFilter, setSelectedFilter] = useState('monthly');
@@ -137,36 +137,6 @@ const HistoryScreen = () => {
     return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   };
 
-  const handleDeleteMood = (mood) => {
-    Alert.alert(
-      'Delete Mood Entry',
-      `Are you sure you want to delete your mood entry from ${formatDate(mood.date)}?`,
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await dispatch(deleteMood(mood.id)).unwrap();
-              Alert.alert('Deleted', 'Mood entry deleted successfully.');
-            } catch (error) {
-              console.error('Error deleting mood:', error);
-              Alert.alert(
-                'Delete Failed',
-                'There was an error deleting your mood entry. Please try again.',
-                [{ text: 'OK' }]
-              );
-            }
-          },
-        },
-      ]
-    );
-  };
-
   // Main component return
   if (isLoadingHistory) {
     return (
@@ -254,7 +224,8 @@ const HistoryScreen = () => {
   }
 
   return (
-    <ScrollView style={styles.container}>
+    <View style={{ flex: 1 }}>
+      <ScrollView style={styles.container}>
       <View style={styles.header}>
         <View style={styles.userInfo}>
           <Text style={styles.userEmail}>{user?.email}</Text>
@@ -316,15 +287,8 @@ const HistoryScreen = () => {
               <TouchableOpacity 
                 key={mood.id}
                 style={[styles.moodSquare, { backgroundColor: mood.color }]}
-                onLongPress={() => handleDeleteMood(mood)}
+                onLongPress={() => dispatch(openEditModal(mood))}
               >
-                <TouchableOpacity 
-                  style={styles.deleteButton}
-                  onPress={() => handleDeleteMood(mood)}
-                >
-                  <Text style={styles.deleteButtonText}>✕</Text>
-                </TouchableOpacity>
-                
                 <View style={styles.moodContent}>
                   <Text style={styles.dateInSquare}>{formatDate(mood.date)}</Text>
                   {mood.notes && (
@@ -341,10 +305,123 @@ const HistoryScreen = () => {
       
       <View style={styles.bottomPadding} />
     </ScrollView>
-  );
-};
 
-const styles = {
+      {/* Edit/Delete Modal */}
+    <Modal
+      visible={showEditModal}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={() => dispatch(closeEditModal())}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>Edit Mood</Text>
+          
+          {/* Color Selection */}
+          <View style={styles.colorSelectionContainer}>
+            <Text style={styles.colorLabel}>Choose Color</Text>
+            <View style={styles.colorOptionsRow}>
+              {[
+                '#FFD700', '#FF69B4', '#32CD32', '#FF6347', '#FFA500',
+                '#708090', '#4682B4', '#8B4513', '#483D8B', '#2F4F4F'
+              ].map((color) => (
+                <TouchableOpacity
+                  key={color}
+                  style={[
+                    styles.colorOptionSmall,
+                    { backgroundColor: color },
+                    editColor === color && styles.colorOptionSelected
+                  ]}
+                  onPress={() => dispatch(setEditColor(color))}
+                />
+              ))}
+            </View>
+          </View>
+
+          {/* Notes Edit */}
+          <View style={styles.notesEditContainer}>
+            <Text style={styles.notesLabel}>Edit Note</Text>
+            <TouchableOpacity
+              style={styles.notesEditInput}
+              onPress={() => {
+                Alert.prompt(
+                  'Edit Note',
+                  'Update your note',
+                  (text) => dispatch(setEditNotes(text)),
+                  'plain-text',
+                  editNotes
+                );
+              }}
+            >
+              <Text style={styles.notesEditText}>
+                {editNotes || 'Tap to edit note...'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Action Buttons */}
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.deleteButtonStyle]}
+              onPress={() => {
+                Alert.alert(
+                  'Delete Mood Entry',
+                  `Are you sure you want to delete this mood?`,
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Delete',
+                      style: 'destructive',
+                      onPress: async () => {
+                        try {
+                          await dispatch(deleteMood(editingMood.id)).unwrap();
+                          dispatch(closeEditModal());
+                          Alert.alert('Deleted', 'Mood entry deleted successfully.');
+                        } catch (error) {
+                          Alert.alert('Delete Failed', 'There was an error deleting your mood entry.');
+                        }
+                      }
+                    }
+                  ]
+                );
+              }}
+            >
+              <Text style={styles.buttonText}>🗑️ Delete</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.actionButton, styles.cancelButtonStyle]}
+              onPress={() => dispatch(closeEditModal())}
+            >
+              <Text style={styles.buttonText}>Cancel</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.actionButton, styles.saveButtonStyle, isEditingLoading && styles.buttonDisabled]}
+              onPress={async () => {
+                try {
+                  await dispatch(editMood({
+                    moodId: editingMood.id,
+                    selectedColor: editColor,
+                    notes: editNotes
+                  })).unwrap();
+                  dispatch(closeEditModal());
+                  Alert.alert('Success', 'Mood updated successfully!');
+                } catch (error) {
+                  Alert.alert('Update Failed', 'There was an error updating your mood.');
+                }
+              }}
+              disabled={isEditingLoading}
+            >
+              <Text style={styles.buttonText}>{isEditingLoading ? 'Saving...' : '💾 Save'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+      </Modal>
+    </View>
+  );
+};const styles = {
   container: {
     flex: 1,
     backgroundColor: '#FEFEFE',
@@ -466,24 +543,6 @@ const styles = {
     flex: 1,
     justifyContent: 'space-between',
   },
-  deleteButton: {
-    position: 'absolute',
-    top: 4,
-    right: 4,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1,
-  },
-  deleteButtonText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: 'bold',
-    lineHeight: 12,
-  },
   dateInSquare: {
     fontSize: 11,
     fontWeight: '600',
@@ -547,6 +606,108 @@ const styles = {
   },
   bottomPadding: {
     height: 20,
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#FEFEFE',
+    borderRadius: 16,
+    padding: 20,
+    width: '85%',
+    maxHeight: '80%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  colorSelectionContainer: {
+    marginBottom: 20,
+  },
+  colorLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#333',
+    marginBottom: 10,
+  },
+  colorOptionsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  colorOptionSmall: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  colorOptionSelected: {
+    borderColor: '#333',
+    borderWidth: 3,
+  },
+  notesEditContainer: {
+    marginBottom: 20,
+  },
+  notesLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#333',
+    marginBottom: 8,
+  },
+  notesEditInput: {
+    backgroundColor: '#F8F8F8',
+    borderRadius: 8,
+    padding: 10,
+    minHeight: 50,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  notesEditText: {
+    fontSize: 14,
+    color: '#666',
+  },
+  buttonContainer: {
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'center',
+  },
+  actionButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    minWidth: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteButtonStyle: {
+    backgroundColor: '#FF6B6B',
+  },
+  cancelButtonStyle: {
+    backgroundColor: '#D3D3D3',
+  },
+  saveButtonStyle: {
+    backgroundColor: '#FFB6C1',
+  },
+  buttonDisabled: {
+    opacity: 0.6,
+  },
+  buttonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#333',
   },
 };
 

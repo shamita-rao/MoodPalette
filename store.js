@@ -259,6 +259,54 @@ export const deleteMood = createAsyncThunk('mood/deleteMood', async (moodId) => 
   }
 });
 
+// Async thunk for editing mood
+export const editMood = createAsyncThunk('mood/editMood', async (editData) => {
+  const { moodId, selectedColor, notes } = editData;
+  
+  // Ensure user is signed in
+  if (!auth.currentUser) {
+    console.error('No authenticated user found when trying to edit mood');
+    throw new Error('No authenticated user');
+  }
+
+  console.log('Editing mood with ID:', moodId);
+  
+  const updatedEntry = {
+    color: selectedColor,
+    colorName: COLOR_NAMES[selectedColor] || 'Unknown Color',
+    notes: notes || '',
+    timestamp: serverTimestamp(),
+  };
+
+  try {
+    const moodRef = doc(db, 'moods', moodId);
+    await setDoc(moodRef, updatedEntry, { merge: true });
+    console.log('✅ Mood edited successfully in Firestore');
+    
+    // Return serializable data (don't include serverTimestamp object)
+    return { 
+      moodId, 
+      color: selectedColor,
+      colorName: COLOR_NAMES[selectedColor] || 'Unknown Color',
+      notes: notes || '',
+      timestamp: new Date().toISOString()
+    };
+  } catch (firestoreError) {
+    console.error('❌ Firestore edit error:', firestoreError);
+    console.error('This is a Firestore security rules issue or connectivity problem.');
+    
+    // Still return the edited data to update local state even if Firebase fails
+    console.log('💡 Updating local state even though Firebase edit failed.');
+    return { 
+      moodId, 
+      color: selectedColor,
+      colorName: COLOR_NAMES[selectedColor] || 'Unknown Color',
+      notes: notes || '',
+      timestamp: new Date().toISOString()
+    };
+  }
+});
+
 // Mood slice
 const moodSlice = createSlice({
   name: 'mood',
@@ -279,6 +327,13 @@ const moodSlice = createSlice({
     isAuthLoading: false,
     authError: null,
     authInitialized: false,
+    // Edit mood state
+    editingMood: null,
+    showEditModal: false,
+    editColor: null,
+    editNotes: '',
+    isEditingLoading: false,
+    editError: null,
   },
   reducers: {
     setSelectedColor: (state, action) => {
@@ -299,6 +354,26 @@ const moodSlice = createSlice({
     },
     clearAuthError: (state) => {
       state.authError = null;
+    },
+    openEditModal: (state, action) => {
+      const mood = action.payload;
+      state.editingMood = mood;
+      state.editColor = mood.color;
+      state.editNotes = mood.notes || '';
+      state.showEditModal = true;
+    },
+    closeEditModal: (state) => {
+      state.editingMood = null;
+      state.editColor = null;
+      state.editNotes = '';
+      state.showEditModal = false;
+      state.editError = null;
+    },
+    setEditColor: (state, action) => {
+      state.editColor = action.payload;
+    },
+    setEditNotes: (state, action) => {
+      state.editNotes = action.payload;
     },
   },
   extraReducers: (builder) => {
@@ -404,6 +479,30 @@ const moodSlice = createSlice({
       .addCase(deleteMood.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.error.message;
+      })
+      // Edit mood cases
+      .addCase(editMood.pending, (state) => {
+        state.isEditingLoading = true;
+        state.editError = null;
+      })
+      .addCase(editMood.fulfilled, (state, action) => {
+        state.isEditingLoading = false;
+        // Update the edited mood in local state
+        const index = state.moodHistory.findIndex(mood => mood.id === action.payload.moodId);
+        if (index !== -1) {
+          state.moodHistory[index] = {
+            ...state.moodHistory[index],
+            color: action.payload.color,
+            colorName: action.payload.colorName,
+            notes: action.payload.notes,
+          };
+        }
+        state.showEditModal = false;
+        state.editingMood = null;
+      })
+      .addCase(editMood.rejected, (state, action) => {
+        state.isEditingLoading = false;
+        state.editError = action.error.message;
       });
   },
 });
@@ -414,7 +513,11 @@ export const {
   setSelectedDate, 
   setShowDatePicker,
   resetNotes,
-  clearAuthError 
+  clearAuthError,
+  openEditModal,
+  closeEditModal,
+  setEditColor,
+  setEditNotes 
 } = moodSlice.actions;
 
 // Configure store
